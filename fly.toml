@@ -26,11 +26,9 @@ primary_region = 'fra'
   auto_start_machines = true
   min_machines_running = 1
 
-[[services]]
-  internal_port = 9877
-  protocol = "tcp"
-  [[services.ports]]
-    port = 9877
+[metrics]
+  port = 9877
+  path = "/metrics"
 
 [[vm]]
   memory = '256mb'
