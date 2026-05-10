@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spotmap Proxy</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 60px auto; padding: 0 20px; color: #1a1a1a; line-height: 1.6; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.2em; }
+    h2 { font-size: 1.1rem; margin-top: 2em; color: #444; }
+    code { background: #f2f2f2; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+    .tag { display: inline-block; background: #e8f4fd; color: #0070c9; font-size: 0.8rem; padding: 2px 8px; border-radius: 12px; margin-bottom: 1em; }
+    footer { margin-top: 3em; font-size: 0.85rem; color: #999; }
+    a { color: #0070c9; }
+  </style>
+</head>
+<body>
+  <h1>Spotmap Proxy</h1>
+  <span class="tag">Infrastructure service</span>
+  <p>
+    <a href="https://github.com/techtimo/spotmap">Spotmap</a> is a WordPress plugin that displays live GPS tracks on a map —
+    useful for glider pilots, hikers, or anyone using a satellite communicator.
+    It supports two position sources: <strong>OGN/FLARM</strong> (glider transponders) and
+    <strong>Zoleo</strong> (satellite messaging devices).
+  </p>
+  <h2>Why does this proxy exist?</h2>
+  <p>Both data sources have a constraint WordPress cannot handle directly:</p>
+  <ul>
+    <li><strong>Zoleo</strong> pushes GPS events to a single developer-registered webhook URL. There is no per-user API — one endpoint must serve every Spotmap installation.</li>
+    <li><strong>OGN/FLARM</strong> requires a persistent TCP connection to the APRS network (<code>aprs.glidernet.org:14580</code>). A PHP-based WordPress site cannot hold an open socket across requests.</li>
+  </ul>
+  <p>This service solves both problems. It receives Zoleo webhook pushes and OGN position packets, looks up which WordPress site each device belongs to, and forwards the data immediately. Routing tables are stored in SQLite; GPS points are never persisted here — they are forwarded and dropped.</p>
+  <h2>Endpoints</h2>
+  <p><strong>Public</strong></p>
+  <ul>
+    <li><code>GET /health</code> — Health check, returns <code>{"ok":true}</code></li>
+    <li><code>POST /zoleo</code> — Zoleo webhook receiver</li>
+  </ul>
+  <p><strong>Provision</strong> — <code>Authorization: Bearer &lt;PROVISION_KEY&gt;</code></p>
+  <ul>
+    <li><code>POST /provision/routes/zoleo</code> — Register or update a Zoleo route</li>
+    <li><code>DELETE /provision/routes/zoleo/:id</code> — Remove own Zoleo route (requires <code>ingest_key</code> in body)</li>
+    <li><code>POST /provision/routes/ogn</code> — Register or update an OGN/FLARM route</li>
+    <li><code>DELETE /provision/routes/ogn/:address_type/:device_id</code> — Remove own OGN route (requires <code>ingest_key</code> in body)</li>
+  </ul>
+  <p><strong>Admin</strong> — <code>Authorization: Bearer &lt;ADMIN_KEY&gt;</code></p>
+  <ul>
+    <li><code>GET /admin/routes</code> — List all routes (ingest keys redacted)</li>
+    <li><code>DELETE /admin/routes/zoleo/:id</code> — Force-remove any Zoleo route</li>
+    <li><code>DELETE /admin/routes/ogn/:address_type/:device_id</code> — Force-remove any OGN route</li>
+  </ul>
+  <footer><a href="https://github.com/techtimo/spotmap-proxy">github.com/techtimo/spotmap-proxy</a></footer>
+</body>
+</html>
