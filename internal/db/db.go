@@ -181,6 +181,15 @@ func DeleteOgnRouteByKey(addressType, deviceID, ingestKey string) (int64, error)
 	return n, nil
 }
 
+func DeleteOgnRoutesByDeviceID(deviceID, ingestKey string) (int64, error) {
+	res, err := conn.Exec(`DELETE FROM ogn_routes WHERE device_id = ? AND ingest_key = ?`, strings.ToUpper(deviceID), ingestKey)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func GetAllOgnFlarmIDs() []string {
 	rows, err := conn.Query(`SELECT address_type || device_id FROM ogn_routes`)
 	if err != nil {

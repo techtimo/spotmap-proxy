@@ -69,7 +69,8 @@ func Handler(ogn Reconnector) http.Handler {
 	mux.HandleFunc("POST /routes/zoleo", bearer(createZoleoRoute))
 	mux.HandleFunc("DELETE /routes/zoleo/{id}", bearer(deleteZoleoRoute))
 	mux.HandleFunc("POST /routes/ogn", bearer(createOgnRoute(ogn)))
-	mux.HandleFunc("DELETE /routes/ogn/{address_type}/{device_id}", bearer(deleteOgnRoute(ogn)))
+	mux.HandleFunc("DELETE /routes/ogn/{device_id}", bearer(deleteOgnRouteByDevice(ogn)))
+	mux.HandleFunc("DELETE /routes/ogn/{device_id}/{address_type}", bearer(deleteOgnRoute(ogn)))
 	return http.StripPrefix("/provision", mux)
 }
 
@@ -163,46 +164,92 @@ func createOgnRoute(ogn Reconnector) http.HandlerFunc {
 			IngestKey    string `json:"ingest_key"`
 			Label        string `json:"label"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AddressType == "" || body.DeviceID == "" || body.WordpressURL == "" || body.IngestKey == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "address_type, device_id, wordpress_url, and ingest_key are required"})
-			return
-		}
-		upper := strings.ToUpper(body.AddressType)
-		if !slices.Contains(db.OgnPrefixes, upper) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "address_type must be one of: " + strings.Join(db.OgnPrefixes, ", ")})
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DeviceID == "" || body.WordpressURL == "" || body.IngestKey == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "device_id, wordpress_url, and ingest_key are required"})
 			return
 		}
 
 		upperDevID := strings.ToUpper(body.DeviceID)
-		if existing := db.GetOgnRoute(upper, upperDevID); existing != nil {
-			if existing.IngestKey != body.IngestKey {
-				log.Printf("[provision] ogn %s/%s rejected: already registered to a different site", upper, upperDevID)
+
+		if body.AddressType != "" {
+			// Single-prefix registration (existing behaviour).
+			upper := strings.ToUpper(body.AddressType)
+			if !slices.Contains(db.OgnPrefixes, upper) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "address_type must be one of: " + strings.Join(db.OgnPrefixes, ", ")})
+				return
+			}
+			if existing := db.GetOgnRoute(upper, upperDevID); existing != nil {
+				if existing.IngestKey != body.IngestKey {
+					log.Printf("[provision] ogn %s/%s rejected: already registered to a different site", upper, upperDevID)
+					writeJSON(w, http.StatusConflict, map[string]string{"error": "device already registered to a different site"})
+					return
+				}
+			} else if db.CountZoleoRoutes()+db.CountOgnRoutes() >= maxRoutes() {
+				log.Printf("[provision] ogn %s/%s rejected: route limit reached (%d)", upper, upperDevID, maxRoutes())
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "route limit reached"})
+				return
+			}
+			ip := clientIP(r)
+			if !checkRateLimit(ip) {
+				log.Printf("[provision] ogn %s/%s rejected: rate limit exceeded for %s", upper, upperDevID, ip)
+				writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many requests"})
+				return
+			}
+			if err := db.UpsertOgnRoute(db.OgnRoute{
+				AddressType:  upper,
+				DeviceID:     upperDevID,
+				WordpressURL: body.WordpressURL,
+				IngestKey:    body.IngestKey,
+				Label:        body.Label,
+				CreatedAt:    time.Now().Unix(),
+			}); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			recordSuccess(ip)
+			ogn.Reconnect()
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+			return
+		}
+
+		// Dual-prefix registration: FLR + ICA.
+		dualPrefixes := []string{"FLR", "ICA"}
+		for _, prefix := range dualPrefixes {
+			if existing := db.GetOgnRoute(prefix, upperDevID); existing != nil && existing.IngestKey != body.IngestKey {
+				log.Printf("[provision] ogn %s/%s rejected: already registered to a different site", prefix, upperDevID)
 				writeJSON(w, http.StatusConflict, map[string]string{"error": "device already registered to a different site"})
 				return
 			}
-		} else if db.CountZoleoRoutes()+db.CountOgnRoutes() >= maxRoutes() {
-			log.Printf("[provision] ogn %s/%s rejected: route limit reached (%d)", upper, upperDevID, maxRoutes())
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "device already registered to a different site"})
+		}
+		newCount := 0
+		for _, prefix := range dualPrefixes {
+			if db.GetOgnRoute(prefix, upperDevID) == nil {
+				newCount++
+			}
+		}
+		if db.CountZoleoRoutes()+db.CountOgnRoutes()+newCount > maxRoutes() {
+			log.Printf("[provision] ogn %s rejected: route limit reached (%d)", upperDevID, maxRoutes())
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "route limit reached"})
 			return
 		}
-
 		ip := clientIP(r)
 		if !checkRateLimit(ip) {
-			log.Printf("[provision] ogn %s/%s rejected: rate limit exceeded for %s", upper, upperDevID, ip)
+			log.Printf("[provision] ogn %s rejected: rate limit exceeded for %s", upperDevID, ip)
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many requests"})
 			return
 		}
-
-		if err := db.UpsertOgnRoute(db.OgnRoute{
-			AddressType:  upper,
-			DeviceID:     upperDevID,
-			WordpressURL: body.WordpressURL,
-			IngestKey:    body.IngestKey,
-			Label:        body.Label,
-			CreatedAt:    time.Now().Unix(),
-		}); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
+		for _, prefix := range dualPrefixes {
+			if err := db.UpsertOgnRoute(db.OgnRoute{
+				AddressType:  prefix,
+				DeviceID:     upperDevID,
+				WordpressURL: body.WordpressURL,
+				IngestKey:    body.IngestKey,
+				Label:        body.Label,
+				CreatedAt:    time.Now().Unix(),
+			}); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
 		}
 		recordSuccess(ip)
 		ogn.Reconnect()
@@ -212,8 +259,8 @@ func createOgnRoute(ogn Reconnector) http.HandlerFunc {
 
 func deleteOgnRoute(ogn Reconnector) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		addressType := r.PathValue("address_type")
 		deviceID := r.PathValue("device_id")
+		addressType := r.PathValue("address_type")
 		var body struct {
 			IngestKey string `json:"ingest_key"`
 		}
@@ -222,6 +269,30 @@ func deleteOgnRoute(ogn Reconnector) http.HandlerFunc {
 			return
 		}
 		n, err := db.DeleteOgnRouteByKey(addressType, deviceID, body.IngestKey)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if n == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Not found"})
+			return
+		}
+		ogn.Reconnect()
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}
+
+func deleteOgnRouteByDevice(ogn Reconnector) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		deviceID := r.PathValue("device_id")
+		var body struct {
+			IngestKey string `json:"ingest_key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.IngestKey == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ingest_key is required"})
+			return
+		}
+		n, err := db.DeleteOgnRoutesByDeviceID(deviceID, body.IngestKey)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
