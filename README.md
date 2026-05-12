@@ -22,8 +22,7 @@ One proxy instance can serve multiple WordPress installations. Routing tables ar
 git clone https://github.com/techtimo/spotmap-proxy.git
 cd spotmap-proxy
 
-# 2. Copy the example env file and fill in both keys
-cp .env.example .env
+# 2. Set required environment variables (see Environment Variables section below)
 # Edit .env: set ADMIN_KEY and PROVISION_KEY to long random strings
 
 # 3. Start the container
@@ -205,6 +204,7 @@ docker compose exec proxy cat /data/zoleo-payloads.log
 | `ZOLEO_BASIC_AUTH_USER` | no | — | If set, enforce HTTP Basic Auth on `POST /zoleo` |
 | `ZOLEO_BASIC_AUTH_PASS` | no | — | Password for Zoleo Basic Auth |
 | `ZOLEO_LOG_PATH` | no | `/data/zoleo-payloads.log` | Path for raw Zoleo payload log |
+| `AIS_API_KEY` | no | — | AISstream.io API key; AIS tracking disabled if absent |
 
 ---
 

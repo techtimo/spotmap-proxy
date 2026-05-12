@@ -15,9 +15,6 @@ go build -ldflags="-s -w" -o spotmap-proxy .
 # Run locally (requires env vars)
 go run .
 
-# Run with Docker
-docker compose up -d
-
 # Health check
 curl http://localhost:8080/health
 ```
@@ -78,4 +75,4 @@ static/index.html                # Self-hosted API docs
 
 ## Metrics & Observability
 
-Prometheus metrics on port 9877: route counts, per-aircraft lat/lon/alt/last-seen. `grafana-dashboard.json` contains a ready-to-import Grafana dashboard with geomap and table panels.
+Prometheus metrics on port 9877: route counts, per-aircraft last-seen.
