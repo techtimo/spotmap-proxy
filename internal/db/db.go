@@ -43,6 +43,13 @@ func Init() {
 			created_at       INTEGER DEFAULT (unixepoch()),
 			PRIMARY KEY (address_type, device_id)
 		);
+		CREATE TABLE IF NOT EXISTS ais_routes (
+			mmsi          TEXT PRIMARY KEY,
+			wordpress_url TEXT NOT NULL,
+			ingest_key    TEXT NOT NULL,
+			label         TEXT,
+			created_at    INTEGER DEFAULT (unixepoch())
+		);
 	`)
 	if err != nil {
 		log.Fatalf("[db] schema: %v", err)
@@ -207,6 +214,88 @@ func GetAllOgnFlarmIDs() []string {
 
 func CountZoleoRoutes() int { return countTable("zoleo_routes") }
 func CountOgnRoutes() int   { return countTable("ogn_routes") }
+func CountAisRoutes() int   { return countTable("ais_routes") }
+func CountAllRoutes() int   { return CountZoleoRoutes() + CountOgnRoutes() + CountAisRoutes() }
+
+type AisRoute struct {
+	MMSI         string `json:"mmsi"`
+	WordpressURL string `json:"wordpress_url"`
+	IngestKey    string `json:"ingest_key"`
+	Label        string `json:"label"`
+	CreatedAt    int64  `json:"created_at"`
+}
+
+func GetAisRoute(mmsi string) *AisRoute {
+	var r AisRoute
+	err := conn.QueryRow(
+		`SELECT mmsi, wordpress_url, ingest_key, COALESCE(label,''), created_at FROM ais_routes WHERE mmsi = ?`,
+		mmsi,
+	).Scan(&r.MMSI, &r.WordpressURL, &r.IngestKey, &r.Label, &r.CreatedAt)
+	if err != nil {
+		return nil
+	}
+	return &r
+}
+
+func ListAisRoutes() []AisRoute {
+	rows, err := conn.Query(`SELECT mmsi, wordpress_url, ingest_key, COALESCE(label,''), created_at FROM ais_routes ORDER BY created_at`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []AisRoute
+	for rows.Next() {
+		var r AisRoute
+		rows.Scan(&r.MMSI, &r.WordpressURL, &r.IngestKey, &r.Label, &r.CreatedAt)
+		out = append(out, r)
+	}
+	return out
+}
+
+func UpsertAisRoute(r AisRoute) error {
+	_, err := conn.Exec(`
+		INSERT INTO ais_routes (mmsi, wordpress_url, ingest_key, label)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(mmsi) DO UPDATE SET
+			wordpress_url = excluded.wordpress_url,
+			ingest_key    = excluded.ingest_key,
+			label         = excluded.label
+	`, r.MMSI, r.WordpressURL, r.IngestKey, nullStr(r.Label))
+	return err
+}
+
+func DeleteAisRoute(mmsi string) (int64, error) {
+	res, err := conn.Exec(`DELETE FROM ais_routes WHERE mmsi = ?`, mmsi)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func DeleteAisRouteByKey(mmsi, ingestKey string) (int64, error) {
+	res, err := conn.Exec(`DELETE FROM ais_routes WHERE mmsi = ? AND ingest_key = ?`, mmsi, ingestKey)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func GetAllAisMmsis() []string {
+	rows, err := conn.Query(`SELECT mmsi FROM ais_routes`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		ids = append(ids, id)
+	}
+	return ids
+}
 
 func countTable(table string) int {
 	if conn == nil {

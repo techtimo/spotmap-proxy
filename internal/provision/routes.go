@@ -64,13 +64,15 @@ func recordSuccess(ip string) {
 	rateMu.Unlock()
 }
 
-func Handler(ogn Reconnector) http.Handler {
+func Handler(ogn, ais Reconnector) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /routes/zoleo", bearer(createZoleoRoute))
 	mux.HandleFunc("DELETE /routes/zoleo/{id}", bearer(deleteZoleoRoute))
 	mux.HandleFunc("POST /routes/ogn", bearer(createOgnRoute(ogn)))
 	mux.HandleFunc("DELETE /routes/ogn/{device_id}", bearer(deleteOgnRouteByDevice(ogn)))
 	mux.HandleFunc("DELETE /routes/ogn/{device_id}/{address_type}", bearer(deleteOgnRoute(ogn)))
+	mux.HandleFunc("POST /routes/ais", bearer(createAisRoute(ais)))
+	mux.HandleFunc("DELETE /routes/ais/{mmsi}", bearer(deleteAisRoute(ais)))
 	return http.StripPrefix("/provision", mux)
 }
 

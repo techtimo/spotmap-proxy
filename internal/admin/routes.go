@@ -12,11 +12,12 @@ type Reconnector interface {
 	Reconnect()
 }
 
-func Handler(ogn Reconnector) http.Handler {
+func Handler(ogn, ais Reconnector) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /routes", bearer(listRoutes))
 	mux.HandleFunc("DELETE /routes/zoleo/{id}", bearer(deleteZoleoRoute))
 	mux.HandleFunc("DELETE /routes/ogn/{address_type}/{device_id}", bearer(deleteOgnRoute(ogn)))
+	mux.HandleFunc("DELETE /routes/ais/{mmsi}", bearer(deleteAisRoute(ais)))
 	return http.StripPrefix("/admin", mux)
 }
 
@@ -44,7 +45,11 @@ func listRoutes(w http.ResponseWriter, r *http.Request) {
 	for i := range ogn {
 		ogn[i].IngestKey = redact(ogn[i].IngestKey)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"zoleo": zoleo, "ogn": ogn})
+	ais := db.ListAisRoutes()
+	for i := range ais {
+		ais[i].IngestKey = redact(ais[i].IngestKey)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"zoleo": zoleo, "ogn": ogn, "ais": ais})
 }
 
 func deleteZoleoRoute(w http.ResponseWriter, r *http.Request) {

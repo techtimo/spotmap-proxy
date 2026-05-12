@@ -13,6 +13,8 @@ import (
 	"github.com/techtimo/spotmap-proxy/internal/db"
 )
 
+const aisStaleSeconds = 600
+
 var (
 	registry = prometheus.NewRegistry()
 
@@ -36,13 +38,20 @@ var (
 		Help: "Unix timestamp of last OGN position update",
 	}, []string{"identifier"})
 
-	mu       sync.Mutex
-	lastSeen = map[string]int64{}
+	aisLastSeenGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "ais_vessel_last_seen_timestamp",
+		Help: "Unix timestamp of last AIS position update",
+	}, []string{"mmsi"})
+
+	mu          sync.Mutex
+	lastSeen    = map[string]int64{}
+	aisLastSeen = map[string]int64{}
 )
 
 func init() {
 	registry.MustRegister(
 		latGauge, lonGauge, altGauge, lastSeenGauge,
+		aisLastSeenGauge,
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "spotmap_zoleo_routes_total",
 			Help: "Number of Zoleo routes currently registered",
@@ -51,6 +60,10 @@ func init() {
 			Name: "spotmap_ogn_routes_total",
 			Help: "Number of OGN routes currently registered",
 		}, func() float64 { return float64(db.CountOgnRoutes()) }),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "spotmap_ais_routes_total",
+			Help: "Number of AIS routes currently registered",
+		}, func() float64 { return float64(db.CountAisRoutes()) }),
 	)
 }
 
@@ -80,8 +93,9 @@ func staleSeconds() int64 {
 
 func cleanupLoop() {
 	for range time.Tick(30 * time.Second) {
-		cutoff := time.Now().Unix() - staleSeconds()
+		now := time.Now().Unix()
 		mu.Lock()
+		cutoff := now - staleSeconds()
 		for id, ts := range lastSeen {
 			if ts < cutoff {
 				l := prometheus.Labels{"identifier": id}
@@ -92,8 +106,23 @@ func cleanupLoop() {
 				delete(lastSeen, id)
 			}
 		}
+		aisCutoff := now - aisStaleSeconds
+		for mmsi, ts := range aisLastSeen {
+			if ts < aisCutoff {
+				aisLastSeenGauge.Delete(prometheus.Labels{"mmsi": mmsi})
+				delete(aisLastSeen, mmsi)
+			}
+		}
 		mu.Unlock()
 	}
+}
+
+func UpdateAis(mmsi string) {
+	now := time.Now().Unix()
+	aisLastSeenGauge.With(prometheus.Labels{"mmsi": mmsi}).Set(float64(now))
+	mu.Lock()
+	aisLastSeen[mmsi] = now
+	mu.Unlock()
 }
 
 func Start() {

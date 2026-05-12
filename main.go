@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/techtimo/spotmap-proxy/internal/admin"
+	"github.com/techtimo/spotmap-proxy/internal/ais"
 	"github.com/techtimo/spotmap-proxy/internal/db"
 	"github.com/techtimo/spotmap-proxy/internal/metrics"
 	"github.com/techtimo/spotmap-proxy/internal/ogn"
@@ -25,10 +26,11 @@ func main() {
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.Handle("/zoleo", zoleo.Handler())
-	mux.Handle("/provision/", provision.Handler(ogn.Default))
-	mux.Handle("/admin/", admin.Handler(ogn.Default))
+	mux.Handle("/provision/", provision.Handler(ogn.Default, ais.Default))
+	mux.Handle("/admin/", admin.Handler(ogn.Default, ais.Default))
 
 	go ogn.Default.Connect()
+	go ais.Default.Connect()
 
 	port := os.Getenv("PORT")
 	if port == "" {

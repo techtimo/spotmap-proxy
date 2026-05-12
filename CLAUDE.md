@@ -27,10 +27,11 @@ There are no automated tests (`*_test.go` files do not exist). Testing is done m
 ## Architecture
 
 ```
-main.go                          # Wires everything together; starts HTTP + metrics servers + OGN client
-internal/db/db.go                # SQLite (WAL mode); zoleo_routes and ogn_routes tables
+main.go                          # Wires everything together; starts HTTP + metrics servers + OGN + AIS clients
+internal/db/db.go                # SQLite (WAL mode); zoleo_routes, ogn_routes, ais_routes tables
 internal/forwarder/forwarder.go  # HTTP POST to WordPress ingest endpoints (async, fire-and-forget)
 internal/ogn/client.go           # APRS TCP client; connects to aprs.glidernet.org:14580, parses positions
+internal/ais/client.go           # AIS WebSocket client; connects to stream.aisstream.io, forwards vessel positions
 internal/zoleo/receiver.go       # HTTP webhook handler with optional Basic Auth
 internal/provision/routes.go     # Self-service route registration API (WordPress plugin calls this)
 internal/admin/routes.go         # Admin route management
@@ -42,7 +43,8 @@ static/index.html                # Self-hosted API docs
 
 - **Zoleo**: `POST /zoleo` → DB lookup by account ID → `forwarder.Post()` → WordPress
 - **OGN**: APRS TCP line → regex parse → DB lookup by device address → `forwarder.Post()` → WordPress + metrics
-- **Provisioning**: WordPress plugin `POST /provision/routes/{zoleo|ogn}` with PROVISION_KEY → upsert in DB → OGN reconnect if device filter changed
+- **AIS**: WebSocket message → JSON parse → DB lookup by MMSI → `forwarder.Post()` → WordPress + metrics
+- **Provisioning**: WordPress plugin `POST /provision/routes/{zoleo|ogn|ais}` with PROVISION_KEY → upsert in DB → reconnect if filter changed
 - **Admin**: `GET|DELETE /admin/routes/...` with ADMIN_KEY → direct DB queries
 
 ### Key constraints
@@ -65,6 +67,7 @@ static/index.html                # Self-hosted API docs
 | `MAX_ROUTES` | `100` | No | Total route capacity |
 | `OGN_STALE_SECONDS` | `300` | No | Seconds before aircraft metrics expire |
 | `ZOLEO_BASIC_AUTH_USER/PASS` | — | No | Optional Basic Auth on `/zoleo` |
+| `AIS_API_KEY` | — | No | AISstream API key; AIS disabled if absent |
 | `ZOLEO_LOG_PATH` | `/data/zoleo-payloads.log` | No | Raw Zoleo payload log for debugging |
 
 ## Deployment
