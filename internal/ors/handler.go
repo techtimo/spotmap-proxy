@@ -14,7 +14,7 @@ const orsBase = "https://api.openrouteservice.org/v2/isochrones"
 
 func Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /isochrones/{profile}", handle)
+	mux.HandleFunc("POST /{profile}", handle)
 	return http.StripPrefix("/isochrones", mux)
 }
 
