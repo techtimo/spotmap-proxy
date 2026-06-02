@@ -11,6 +11,7 @@ import (
 	"github.com/techtimo/spotmap-proxy/internal/db"
 	"github.com/techtimo/spotmap-proxy/internal/metrics"
 	"github.com/techtimo/spotmap-proxy/internal/ogn"
+	"github.com/techtimo/spotmap-proxy/internal/ors"
 	"github.com/techtimo/spotmap-proxy/internal/provision"
 	"github.com/techtimo/spotmap-proxy/internal/zoleo"
 )
@@ -26,6 +27,7 @@ func main() {
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.Handle("/zoleo", zoleo.Handler())
+	mux.Handle("/isochrone", ors.Handler())
 	mux.Handle("/provision/", provision.Handler(ogn.Default, ais.Default))
 	mux.Handle("/admin/", admin.Handler(ogn.Default, ais.Default))
 
