@@ -27,7 +27,7 @@ func main() {
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.Handle("/zoleo", zoleo.Handler())
-	mux.Handle("/isochrone", ors.Handler())
+	mux.Handle("/isochrones/", ors.Handler())
 	mux.Handle("/provision/", provision.Handler(ogn.Default, ais.Default))
 	mux.Handle("/admin/", admin.Handler(ogn.Default, ais.Default))
 
