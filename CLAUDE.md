@@ -65,6 +65,7 @@ static/index.html                # Self-hosted API docs
 | `OGN_STALE_SECONDS` | `300` | No | Seconds before aircraft metrics expire |
 | `ZOLEO_BASIC_AUTH_USER/PASS` | — | No | Optional Basic Auth on `/zoleo` |
 | `AIS_API_KEY` | — | No | AISstream API key; AIS disabled if absent |
+| `ORS_API_KEY` | — | No | OpenRouteService API key; `/isochrone` returns 503 if absent |
 | `ZOLEO_LOG_PATH` | `/data/zoleo-payloads.log` | No | Raw Zoleo payload log for debugging |
 
 ## Deployment
